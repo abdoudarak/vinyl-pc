@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Vinyl Player</title>
+<style>
+*{box-sizing:border-box;margin:0;user-select:none}
+html,body{height:100%;background:#07050c;color:#fff;font-family:"Segoe UI",system-ui,sans-serif;overflow:hidden}
+#fx{position:fixed;inset:0;pointer-events:none}
+#app{position:relative;height:100%;display:flex;align-items:center;justify-content:center;gap:6vw;padding:4vh 5vw}
+#deck{position:relative;width:min(46vh,40vw);aspect-ratio:1;flex:none}
+#disc{position:absolute;left:0;bottom:0;width:90%;aspect-ratio:1;border-radius:50%;background:#333 center/cover;animation:spin 10s linear infinite;animation-play-state:paused;box-shadow:0 20px 60px #000a}
+#disc.on{animation-play-state:running}
+#disc::before{content:"";position:absolute;inset:0;border-radius:50%;background:repeating-radial-gradient(circle,transparent 0 6px,#0003 6px 7px)}
+#disc::after{content:"";position:absolute;left:41%;top:41%;width:18%;height:18%;border-radius:50%;background:#e6b3ff;box-shadow:inset 0 0 0 4px #0006}
+@keyframes spin{to{transform:rotate(360deg)}}
+#arm{position:absolute;right:4%;top:4%;width:6px;height:60%;background:#fff;border-radius:6px;transform-origin:50% 0;transform:rotate(-30deg);transition:transform .8s ease}
+#arm.on{transform:rotate(-14deg)}
+#arm::before{content:"";position:absolute;left:-8px;top:-8px;width:22px;height:22px;border-radius:50%;background:#fff}
+#arm::after{content:"";position:absolute;left:-4px;bottom:-6px;width:14px;height:14px;border-radius:50%;background:#fff}
+#info{max-width:40vw;min-width:280px}
+#artist{letter-spacing:.2em;font-size:.8rem;opacity:.7;text-transform:uppercase}
+#title{font-size:clamp(2rem,5vw,3.6rem);font-weight:800;color:#f0ccff;margin:.2em 0 .6em;line-height:1.1}
+#cur{font-size:clamp(1.1rem,2vw,1.6rem);font-weight:700;min-height:2.6em}
+#nxt{font-size:1rem;opacity:.4;margin-top:.3em;min-height:1.5em}
+#bar{height:4px;background:#fff3;border-radius:4px;margin-top:2em;overflow:hidden}
+#fill{height:100%;width:0;background:#d38cff}
+#times{display:flex;justify-content:space-between;font-size:.75rem;opacity:.5;margin-top:.4em}
+#ctl{display:flex;gap:1.6rem;align-items:center;margin-top:1.2rem}
+#ctl button{background:none;border:0;color:#fff;font-size:1.6rem;cursor:pointer;opacity:.85}
+#ctl button:hover{opacity:1}
+#pp{background:#b04cff!important;border-radius:50%;width:56px;height:56px;font-size:1.4rem!important}
+#idle{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;opacity:.7;background:#07050c;text-align:center;padding:20px}
+.win{position:fixed;top:8px;right:10px;display:flex;gap:6px;z-index:5}
+.win button{background:#ffffff18;border:0;color:#fff;width:28px;height:28px;border-radius:8px;cursor:pointer}
+.win button:hover{background:#ffffff35}
+body.mini #app{flex-direction:column;gap:6px;padding:40px 16px 12px}
+body.mini #deck{width:230px}
+body.mini #info{max-width:100%;min-width:0;text-align:center;width:100%}
+body.mini #title{font-size:1.4rem;margin:.1em 0 .3em}
+body.mini #cur{font-size:.95rem;min-height:2.4em}
+body.mini #nxt,body.mini #bar,body.mini #times{display:none}
+body.mini #bar{display:block}
+body.mini #ctl{justify-content:center;margin-top:.4rem}
+body.full #bmax{display:none}body.mini #bmin{display:none}
+</style></head><body class="mini">
+<canvas id="fx"></canvas>
+<div class="win"><button id="bmax" title="Full screen" onclick="api('full')">⤢</button><button id="bmin" title="Small window" onclick="api('mini')">▭</button><button title="Minimize" onclick="api('minimize')">–</button><button title="Close" onclick="api('close')">✕</button></div>
+<div id="app">
+ <div id="deck"><div id="disc"></div><div id="arm"></div></div>
+ <div id="info">
+  <div id="artist"></div><div id="title"></div>
+  <div id="cur"></div><div id="nxt"></div>
+  <div id="bar"><div id="fill"></div></div>
+  <div id="times"><span id="t1">0:00</span><span id="t2">0:00</span></div>
+  <div id="ctl"><button onclick="c('prev')">⏮</button><button id="pp" onclick="c('toggle')">⏸</button><button onclick="c('next')">⏭</button></div>
+ </div>
+</div>
+<div id="idle">Play a song in Spotify, YouTube Music, a browser...</div>
+<script>
+const $=id=>document.getElementById(id);
+let S=null,at=0,lyr=[],lastKey="",lastCover=-1,A={b:new Array(48).fill(0),bass:0},col=[155,48,255],bass=0;
+const c=a=>fetch("/api/ctl?a="+a);
+const api=a=>{if(window.pywebview&&pywebview.api)pywebview.api[a]().then(m=>{if(m)setMode(m)})};
+function setMode(m){document.body.className=m}
+addEventListener("keydown",e=>{if(e.key==="Escape")api("mini")});
+const fmt=s=>{s=Math.max(0,Math.floor(s));return Math.floor(s/60)+":"+String(s%60).padStart(2,"0")};
+function parse(t){return (t||"").split("\n").map(l=>{const m=l.match(/^\[(\d+):(\d+(?:\.\d+)?)\](.*)/);return m?[+m[1]*60+ +m[2],m[3].trim()]:null}).filter(Boolean)}
+function color(url){const i=new Image();i.onload=()=>{const k=document.createElement("canvas");k.width=k.height=16;const x=k.getContext("2d");x.drawImage(i,0,0,16,16);const d=x.getImageData(0,0,16,16).data;let best=null,bs=-1;for(let p=0;p<d.length;p+=4){const r=d[p],g=d[p+1],b=d[p+2],mx=Math.max(r,g,b),mn=Math.min(r,g,b),s=(mx-mn)*(mx>60?1:0);if(s>bs){bs=s;best=[r,g,b]}}if(best)col=best};i.src=url}
+async function tick(){
+ try{S=await (await fetch("/api/now")).json();at=performance.now()}catch(e){}
+ if(!S||!S.active){$("idle").style.display="flex";return}
+ $("idle").style.display="none";
+ $("artist").textContent=S.artist;$("title").textContent=S.title;
+ if(S.cover!==lastCover){lastCover=S.cover;const u="/cover?"+S.cover;$("disc").style.backgroundImage=`url(${u})`;color(u)}
+ const key=S.title+"|"+S.artist;
+ if(key!==lastKey){lastKey=key;lyr=[];
+  fetch(`/api/lyrics?title=${encodeURIComponent(S.title)}&artist=${encodeURIComponent(S.artist)}&dur=${S.dur}`).then(r=>r.json()).then(j=>{if(key===lastKey)lyr=parse(j.syncedLyrics)}).catch(()=>{})}
+ $("disc").classList.toggle("on",S.playing);$("arm").classList.toggle("on",S.playing);
+ $("pp").textContent=S.playing?"⏸":"▶";$("t2").textContent=fmt(S.dur);
+}
+setInterval(()=>fetch("/api/audio").then(r=>r.json()).then(j=>{A=j}).catch(()=>{}),40);
+const cv=$("fx"),g=cv.getContext("2d");
+function rs(){cv.width=innerWidth;cv.height=innerHeight}addEventListener("resize",rs);rs();
+const P=Array.from({length:90},()=>({x:Math.random(),y:Math.random(),v:.0006+Math.random()*.0015,s:1+Math.random()*3,a:.2+Math.random()*.6}));
+function fx(t){
+ const W=cv.width,H=cv.height;bass+=(A.bass-bass)*.35;
+ g.globalCompositeOperation="source-over";g.clearRect(0,0,W,H);
+ g.globalCompositeOperation="lighter";
+ const cs=[col,[col[2],col[0],col[1]],[col[1],col[2],col[0]]];
+ cs.forEach((q,k)=>{const x=W*(.3+.4*Math.sin(t/5000+k*2.1)),y=H*(.5+.3*Math.cos(t/4300+k*1.7)),r=Math.max(W,H)*(.28+bass*.3);
+  const gr=g.createRadialGradient(x,y,0,x,y,r);gr.addColorStop(0,`rgba(${q},${.32+bass*.25})`);gr.addColorStop(1,`rgba(${q},0)`);g.fillStyle=gr;g.fillRect(0,0,W,H)});
+ P.forEach(p=>{p.y-=p.v*(1+bass*6);if(p.y<-.02){p.y=1.02;p.x=Math.random()}
+  g.fillStyle=`rgba(255,255,255,${p.a*(.4+bass)})`;g.beginPath();g.arc(p.x*W+Math.sin(t/1500+p.x*9)*12,p.y*H,p.s*(1+bass*1.5),0,7);g.fill()});
+ const d=$("deck").getBoundingClientRect();
+ if(d.width&&!$("idle").offsetParent===false||true){
+  const rad=d.width*.45,cx=d.left+d.width*.45,cy=d.bottom-d.width*.45,n=A.b.length*2;
+  g.lineCap="round";g.lineWidth=Math.max(2,d.width/90);g.strokeStyle=`rgba(${Math.min(255,col[0]+70)},${Math.min(255,col[1]+70)},${Math.min(255,col[2]+70)},.9)`;
+  for(let i=0;i<n;i++){const v=A.b[i<n/2?i:n-1-i],a=i/n*Math.PI*2-Math.PI/2,r0=rad*1.05,r1=r0+2+v*rad*.4;
+   g.beginPath();g.moveTo(cx+Math.cos(a)*r0,cy+Math.sin(a)*r0);g.lineTo(cx+Math.cos(a)*r1,cy+Math.sin(a)*r1);g.stroke()}
+ }
+ $("deck").style.transform=`scale(${1+bass*.04})`;
+ if(S&&S.active){
+  const pos=S.pos+(S.playing?(performance.now()-at)/1000:0);
+  $("fill").style.width=(S.dur>0?Math.min(100,pos/S.dur*100):0)+"%";$("t1").textContent=fmt(pos);
+  let i=-1;for(let k=0;k<lyr.length;k++){if(lyr[k][0]<=pos)i=k;else break}
+  $("cur").textContent=i>=0?(lyr[i][1]||"♪"):"";$("nxt").textContent=lyr[i+1]?lyr[i+1][1]:"";
+ }
+ requestAnimationFrame(fx)
+}
+setInterval(tick,500);tick();requestAnimationFrame(fx);
+</script></body></html>
